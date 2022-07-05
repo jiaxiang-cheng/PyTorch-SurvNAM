@@ -13,9 +13,7 @@ def truncated_normal_(tensor, mean: float = 0., std: float = 1.):
 
 
 class ActivationLayer(torch.nn.Module):
-    def __init__(self,
-                 in_features: int,
-                 out_features: int):
+    def __init__(self, in_features: int, out_features: int):
         super().__init__()
         self.weight = torch.nn.Parameter(torch.empty((in_features, out_features)))
         self.bias = torch.nn.Parameter(torch.empty(in_features))
@@ -25,9 +23,7 @@ class ActivationLayer(torch.nn.Module):
 
 
 class ExULayer(ActivationLayer):
-    def __init__(self,
-                 in_features: int,
-                 out_features: int):
+    def __init__(self, in_features: int, out_features: int):
         super().__init__(in_features, out_features)
         truncated_normal_(self.weight, mean=4.0, std=0.5)
         truncated_normal_(self.bias, std=0.5)
@@ -38,9 +34,7 @@ class ExULayer(ActivationLayer):
 
 
 class ReLULayer(ActivationLayer):
-    def __init__(self,
-                 in_features: int,
-                 out_features: int):
+    def __init__(self, in_features: int, out_features: int):
         super().__init__(in_features, out_features)
         torch.nn.init.xavier_uniform_(self.weight)
         truncated_normal_(self.bias, std=0.5)
@@ -67,7 +61,6 @@ class FeatureNN(torch.nn.Module):
         self.dropout = torch.nn.Dropout(p=dropout)
         self.linear = torch.nn.Linear(shallow_units if len(hidden_units) == 0 else hidden_units[-1], 1, bias=False)
         torch.nn.init.xavier_uniform_(self.linear.weight)
-
 
     def forward(self, x):
         x = x.unsqueeze(1)
@@ -109,7 +102,6 @@ class NeuralAdditiveModel(torch.nn.Module):
     def forward(self, x):
         f_out = torch.cat(self._feature_nns(x), dim=-1)
         f_out = self.feature_dropout(f_out)
-
         return f_out.sum(axis=-1) + self.bias, f_out
 
     def _feature_nns(self, x):

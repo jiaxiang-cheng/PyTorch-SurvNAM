@@ -10,6 +10,8 @@ from typing import Tuple, Dict, Union, Iterator, List
 import numpy as np
 import pandas as pd
 
+from lifelines import datasets
+
 from sklearn.compose import ColumnTransformer
 from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import KFold
@@ -25,31 +27,54 @@ DATA_PATH = 'gs://nam_datasets/data'
 DatasetType = Tuple[np.ndarray, np.ndarray]
 
 
-def save_array_to_disk(filename,
-                       np_arr,
-                       allow_pickle=False):
+def save_array_to_disk(filename, np_arr, allow_pickle=False):
     """Saves a np.ndarray to a specified file on disk."""
     np.save(filename, np_arr, allow_pickle=allow_pickle)
 
 
-def read_dataset(dataset_name,
-                 header='infer',
-                 names=None,
-                 delim_whitespace=False):
+def read_dataset(dataset_name, header='infer', names=None, delim_whitespace=False):
+    """
+
+    :param dataset_name:
+    :param header:
+    :param names:
+    :param delim_whitespace:
+    :return:
+    """
     dataset_path = osp.join(DATA_PATH, dataset_name)
     return pd.read_csv(dataset_path, header=header, names=names, delim_whitespace=delim_whitespace)
 
 
 def load_breast_data():
-    """Load and return the Breast Cancer Wisconsin dataset (classification)."""
-
+    """
+    Load and return the Breast Cancer Wisconsin dataset (classification).
+    """
     breast = load_breast_cancer()
     feature_names = list(breast.feature_names)
+
+    gbsg2 = datasets.load_gbsg2()
+    gbsg2_data = gbsg2[['age', 'tsize', 'pnodes', 'progrec', 'estrec']]
+    gbsg2_horTh = pd.get_dummies(gbsg2.horTh, prefix='horTh')
+    gbsg2_menostat = pd.get_dummies(gbsg2.menostat, prefix='menostat')
+    gbsg2_tgrade = pd.get_dummies(gbsg2.tgrade, prefix='tgrade')
+    gbsg2_data = pd.concat([gbsg2_data, gbsg2_horTh, gbsg2_menostat, gbsg2_tgrade], axis=1)
+    gbsg2_features = gbsg2_data.columns.to_list()
+    gbsg2_data = gbsg2_data.to_numpy()
+    gbsg2_target = gbsg2[['cens']]
+    gbsg2_target = gbsg2_target.to_numpy()
+    gbsg2_target = np.squeeze(gbsg2_target)
+
     return {
         'problem': 'classification',
-        'X': pd.DataFrame(breast.data, columns=feature_names),
-        'y': breast.target,
+        'X': pd.DataFrame(gbsg2_data, columns=gbsg2_features),
+        'y': gbsg2_target,
     }
+
+    # return {
+    #     'problem': 'classification',
+    #     'X': pd.DataFrame(breast.data, columns=feature_names),
+    #     'y': breast.target,
+    # }
 
 
 def load_adult_data():
@@ -250,8 +275,7 @@ def load_dataset(dataset_name):
     problem_type = dataset['problem']
     data_x, column_names = transform_data(data_x)
     data_x = data_x.astype('float32')
-    if (problem_type == 'classification') and \
-            (not isinstance(data_y, np.ndarray)):
+    if (problem_type == 'classification') and (not isinstance(data_y, np.ndarray)):
         data_y = pd.get_dummies(data_y).values
         data_y = np.argmax(data_y, axis=-1)
     data_y = data_y.astype('float32')
@@ -293,7 +317,7 @@ def get_train_test_fold(
     else:
         stratified_k_fold = KFold(
             n_splits=num_folds, shuffle=True, random_state=random_state)
-    assert fold_num <= num_folds and fold_num > 0, 'Pass a valid fold number.'
+    assert num_folds >= fold_num > 0, 'Pass a valid fold number.'
     for train_index, test_index in stratified_k_fold.split(data_x, data_y):
         if fold_num == 1:
             x_train, x_test = data_x[train_index], data_x[test_index]

@@ -61,6 +61,10 @@ _N_FOLDS = 5
 
 
 def seed_everything(seed):
+    """
+
+    :param seed:
+    """
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
     torch.manual_seed(seed)
@@ -70,6 +74,15 @@ def seed_everything(seed):
 
 
 def train_model(x_train, y_train, x_valid, y_valid, device):
+    """
+
+    :param x_train:
+    :param y_train:
+    :param x_valid:
+    :param y_valid:
+    :param device:
+    :return:
+    """
     model = NeuralAdditiveModel(
         input_size=x_train.shape[-1],
         shallow_units=nam.data_utils.calculate_n_units(x_train, FLAGS.n_basis_functions, FLAGS.units_multiplier),
@@ -88,21 +101,24 @@ def train_model(x_train, y_train, x_valid, y_valid, device):
     validate_dataset = TensorDataset(torch.tensor(x_valid), torch.tensor(y_valid))
     validate_loader = DataLoader(validate_dataset, batch_size=FLAGS.batch_size, shuffle=True)
 
-    n_tries = FLAGS.early_stopping_epochs
-    best_validation_score, best_weights = 0, None
+    n_tries = FLAGS.early_stopping_epochs  # to restrict the minimum training epochs
+    best_validation_score, best_weights = 0, None  # to store the optimal performance
 
     for epoch in range(FLAGS.training_epochs):
-        model = model.train()
+        model = model.train()  # training the model
         total_loss = train_one_epoch(model, criterion, optimizer, train_loader, device)
+        # record the log of training (training loss)
         logging.info(f"epoch {epoch} | train | {total_loss}")
 
-        scheduler.step()
+        scheduler.step()  # update the learning rate
 
-        model = model.eval()
+        model = model.eval()  # validating the model
         metric, val_score = evaluate(model, validate_loader, device)
+        # record the log of validation (validation score)
         logging.info(f"epoch {epoch} | validate | {metric}={val_score}")
 
-        # early stopping
+        # early stopping if the validation performance degrades
+        # but also restricted to a minimum epochs of training
         if val_score <= best_validation_score and n_tries > 0:
             n_tries -= 1
             continue
@@ -110,15 +126,24 @@ def train_model(x_train, y_train, x_valid, y_valid, device):
             logging.info(f"early stopping at epoch {epoch}")
             break
 
-        best_validation_score = val_score
-        best_weights = copy.deepcopy(model.state_dict())
+        best_validation_score = val_score  # update the optimal validation score
+        best_weights = copy.deepcopy(model.state_dict())  # update the optimal model
 
-    model.load_state_dict(best_weights)
+    model.load_state_dict(best_weights)  # continue training from the optimal model
 
     return model
 
 
 def train_one_epoch(model, criterion, optimizer, data_loader, device):
+    """
+
+    :param model:
+    :param criterion:
+    :param optimizer:
+    :param data_loader:
+    :param device:
+    :return:
+    """
     pbar = tqdm.tqdm(enumerate(data_loader, start=1), total=len(data_loader))
     total_loss = 0
     for i, (x, y) in pbar:
@@ -135,6 +160,13 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device):
 
 
 def evaluate(model, data_loader, device):
+    """
+
+    :param model:
+    :param data_loader:
+    :param device:
+    :return:
+    """
     total_score = 0
     metric = None
     for i, (x, y) in enumerate(data_loader, start=1):
@@ -154,8 +186,11 @@ def main(args):
         handlers.append(logging.FileHandler(FLAGS.log_file))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", handlers=handlers)
 
+    # cpu or gpu to train the model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     logging.info("load data")
+
     train, (x_test, y_test) = nam.data_utils.create_test_train_fold(dataset=FLAGS.dataset,
                                                                     id_fold=FLAGS.id_fold,
                                                                     n_folds=_N_FOLDS,
@@ -165,6 +200,7 @@ def main(args):
     test_loader = DataLoader(test_dataset, batch_size=FLAGS.batch_size, shuffle=True)
 
     logging.info("begin training")
+
     test_scores = []
     while True:
         try:
