@@ -13,30 +13,50 @@ from nam.model import *
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer("training_epochs", 10, "The number of epochs to run training for.")
-flags.DEFINE_float("learning_rate", 1e-3, "Hyperparameter: learning rate.")
-flags.DEFINE_float("output_regularization", 0.0, "Hyperparameter: feature reg")
-flags.DEFINE_float("l2_regularization", 0.0, "Hyperparameter: l2 weight decay")
-flags.DEFINE_integer("batch_size", 32, "Hyperparameter: batch size.")
-flags.DEFINE_string("log_file", None, "File where to store summaries.")
-flags.DEFINE_string("dataset", "BreastCancer", "Name of the dataset to load for training.")
-flags.DEFINE_float("decay_rate", 0.995, "Hyperparameter: Optimizer decay rate")
-flags.DEFINE_float("dropout", 0.5, "Hyperparameter: Dropout rate")
-flags.DEFINE_integer("data_split", 1, "Dataset split index to use. Possible values are 1 to `FLAGS.num_splits`.")
-flags.DEFINE_integer("seed", 1, "Seed used for reproducibility.")
-flags.DEFINE_float("feature_dropout", 0.0, "Hyperparameter: Prob. with which features are dropped")
+flags.DEFINE_integer("training_epochs", 10,
+                     "The number of epochs to run training for.")
+flags.DEFINE_float("learning_rate", 1e-3,
+                   "Hyperparameter: learning rate.")
+flags.DEFINE_float("output_regularization", 0.0,
+                   "Hyperparameter: feature reg")
+flags.DEFINE_float("l2_regularization", 0.0,
+                   "Hyperparameter: l2 weight decay")
+flags.DEFINE_integer("batch_size", 32,
+                     "Hyperparameter: batch size.")
+flags.DEFINE_string("log_file", None,
+                    "File where to store summaries.")
+flags.DEFINE_string("dataset", "BreastCancer",
+                    "Name of the dataset to load for training.")
+flags.DEFINE_float("decay_rate", 0.995,
+                   "Hyperparameter: Optimizer decay rate")
+flags.DEFINE_float("dropout", 0.5,
+                   "Hyperparameter: Dropout rate")
+flags.DEFINE_integer("data_split", 1,
+                     "Dataset split index to use. Possible values are 1 to `FLAGS.num_splits`.")
+flags.DEFINE_integer("seed", 1,
+                     "Seed used for reproducibility.")
+flags.DEFINE_float("feature_dropout", 0.0,
+                   "Hyperparameter: Prob. with which features are dropped")
 flags.DEFINE_integer("n_basis_functions", 1000,
                      "Number of basis functions to use in a FeatureNN for a real-valued feature.")
-flags.DEFINE_integer("units_multiplier", 2, "Number of basis functions for a categorical feature")
-flags.DEFINE_integer("n_models", 1, "the number of models to train.")
-flags.DEFINE_integer("n_splits", 3, "Number of data splits to use")
-flags.DEFINE_integer("id_fold", 1, "Index of the fold to be used")
-flags.DEFINE_list("hidden_units", [], "Amounts of neurons for additional hidden layers, e.g. 64,32,32")
-flags.DEFINE_string("shallow_layer", "exu", "Activation function used for the first layer: (1) relu, (2) exu")
-flags.DEFINE_string("hidden_layer", "relu", "Activation function used for the hidden layers: (1) relu, (2) exu")
-flags.DEFINE_boolean("regression", False, "Boolean for regression or classification")
-flags.DEFINE_integer("early_stopping_epochs", 60, "Early stopping epochs")
-
+flags.DEFINE_integer("units_multiplier", 2,
+                     "Number of basis functions for a categorical feature")
+flags.DEFINE_integer("n_models", 1,
+                     "the number of models to train.")
+flags.DEFINE_integer("n_splits", 3,
+                     "Number of data splits to use")
+flags.DEFINE_integer("id_fold", 1,
+                     "Index of the fold to be used")
+flags.DEFINE_list("hidden_units", [],
+                  "Amounts of neurons for additional hidden layers, e.g. 64,32,32")
+flags.DEFINE_string("shallow_layer", "exu",
+                    "Activation function used for the first layer: (1) relu, (2) exu")
+flags.DEFINE_string("hidden_layer", "relu",
+                    "Activation function used for the hidden layers: (1) relu, (2) exu")
+flags.DEFINE_boolean("regression", False,
+                     "Boolean for regression or classification")
+flags.DEFINE_integer("early_stopping_epochs", 60,
+                     "Early stopping epochs")
 _N_FOLDS = 5
 
 
@@ -49,7 +69,7 @@ def seed_everything(seed):
     torch.backends.cudnn.benchmark = False
 
 
-def train_model(x_train, y_train, x_validate, y_validate, device):
+def train_model(x_train, y_train, x_valid, y_valid, device):
     model = NeuralAdditiveModel(
         input_size=x_train.shape[-1],
         shallow_units=nam.data_utils.calculate_n_units(x_train, FLAGS.n_basis_functions, FLAGS.units_multiplier),
@@ -65,7 +85,7 @@ def train_model(x_train, y_train, x_validate, y_validate, device):
 
     train_dataset = TensorDataset(torch.tensor(x_train), torch.tensor(y_train))
     train_loader = DataLoader(train_dataset, batch_size=FLAGS.batch_size, shuffle=True)
-    validate_dataset = TensorDataset(torch.tensor(x_validate), torch.tensor(y_validate))
+    validate_dataset = TensorDataset(torch.tensor(x_valid), torch.tensor(y_valid))
     validate_loader = DataLoader(validate_dataset, batch_size=FLAGS.batch_size, shuffle=True)
 
     n_tries = FLAGS.early_stopping_epochs
@@ -89,6 +109,7 @@ def train_model(x_train, y_train, x_validate, y_validate, device):
         elif val_score <= best_validation_score:
             logging.info(f"early stopping at epoch {epoch}")
             break
+
         best_validation_score = val_score
         best_weights = copy.deepcopy(model.state_dict())
 
@@ -109,6 +130,7 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device):
         loss.backward()
         optimizer.step()
         pbar.set_description(f"train | loss = {total_loss:.5f}")
+
     return total_loss
 
 
@@ -120,6 +142,7 @@ def evaluate(model, data_loader, device):
         logits, fnns_out = model.forward(x)
         metric, score = nam.metrics.calculate_metric(logits, y, regression=FLAGS.regression)
         total_score -= (total_score / i) - (score / i)
+
     return metric, total_score
 
 
@@ -134,10 +157,10 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logging.info("load data")
     train, (x_test, y_test) = nam.data_utils.create_test_train_fold(dataset=FLAGS.dataset,
-                                                                id_fold=FLAGS.id_fold,
-                                                                n_folds=_N_FOLDS,
-                                                                n_splits=FLAGS.n_splits,
-                                                                regression=not FLAGS.regression)
+                                                                    id_fold=FLAGS.id_fold,
+                                                                    n_folds=_N_FOLDS,
+                                                                    n_splits=FLAGS.n_splits,
+                                                                    regression=not FLAGS.regression)
     test_dataset = TensorDataset(torch.tensor(x_test), torch.tensor(y_test))
     test_loader = DataLoader(test_dataset, batch_size=FLAGS.batch_size, shuffle=True)
 
