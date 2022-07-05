@@ -13,50 +13,32 @@ from nam.model import *
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer("training_epochs", 10,
-                     "The number of epochs to run training for.")
-flags.DEFINE_float("learning_rate", 1e-3,
-                   "Hyperparameter: learning rate.")
-flags.DEFINE_float("output_regularization", 0.0,
-                   "Hyperparameter: feature reg")
-flags.DEFINE_float("l2_regularization", 0.0,
-                   "Hyperparameter: l2 weight decay")
-flags.DEFINE_integer("batch_size", 32,
-                     "Hyperparameter: batch size.")
-flags.DEFINE_string("log_file", None,
-                    "File where to store summaries.")
-flags.DEFINE_string("dataset", "BreastCancer",
-                    "Name of the dataset to load for training.")
-flags.DEFINE_float("decay_rate", 0.995,
-                   "Hyperparameter: Optimizer decay rate")
-flags.DEFINE_float("dropout", 0.5,
-                   "Hyperparameter: Dropout rate")
-flags.DEFINE_integer("data_split", 1,
-                     "Dataset split index to use. Possible values are 1 to `FLAGS.num_splits`.")
-flags.DEFINE_integer("seed", 1,
-                     "Seed used for reproducibility.")
-flags.DEFINE_float("feature_dropout", 0.0,
-                   "Hyperparameter: Prob. with which features are dropped")
+flags.DEFINE_float("learning_rate", 1e-3, "Hyper-parameter: learning rate.")
+flags.DEFINE_float("decay_rate", 0.995, "Hyper-parameter: Optimizer decay rate")
+flags.DEFINE_float("output_regularization", 0.0, "Hyper-parameter: feature reg")
+flags.DEFINE_float("l2_regularization", 0.0, "Hyper-parameter: l2 weight decay")
+flags.DEFINE_float("dropout", 0.5, "Hyper-parameter: Dropout rate")
+flags.DEFINE_float("feature_dropout", 0.0, "Hyper-parameter: Prob. with which features are dropped")
+
+flags.DEFINE_integer("training_epochs", 10, "The number of epochs to run training for.")
+flags.DEFINE_integer("early_stopping_epochs", 60, "Early stopping epochs")
+flags.DEFINE_integer("batch_size", 32, "Hyper-parameter: batch size.")
+flags.DEFINE_integer("data_split", 1, "Dataset split index to use. Possible values are 1 to `FLAGS.num_splits`.")
+flags.DEFINE_integer("seed", 1, "Seed used for reproducibility.")
 flags.DEFINE_integer("n_basis_functions", 1000,
                      "Number of basis functions to use in a FeatureNN for a real-valued feature.")
-flags.DEFINE_integer("units_multiplier", 2,
-                     "Number of basis functions for a categorical feature")
-flags.DEFINE_integer("n_models", 1,
-                     "the number of models to train.")
-flags.DEFINE_integer("n_splits", 3,
-                     "Number of data splits to use")
-flags.DEFINE_integer("id_fold", 1,
-                     "Index of the fold to be used")
-flags.DEFINE_list("hidden_units", [],
-                  "Amounts of neurons for additional hidden layers, e.g. 64,32,32")
-flags.DEFINE_string("shallow_layer", "exu",
-                    "Activation function used for the first layer: (1) relu, (2) exu")
-flags.DEFINE_string("hidden_layer", "relu",
-                    "Activation function used for the hidden layers: (1) relu, (2) exu")
-flags.DEFINE_boolean("regression", False,
-                     "Boolean for regression or classification")
-flags.DEFINE_integer("early_stopping_epochs", 60,
-                     "Early stopping epochs")
+flags.DEFINE_integer("units_multiplier", 2, "Number of basis functions for a categorical feature")
+flags.DEFINE_integer("n_models", 1, "the number of models to train.")
+flags.DEFINE_integer("n_splits", 3, "Number of data splits to use")
+flags.DEFINE_integer("id_fold", 1, "Index of the fold to be used")
+
+flags.DEFINE_list("hidden_units", [], "Amounts of neurons for additional hidden layers, e.g. 64,32,32")
+flags.DEFINE_string("log_file", None, "File where to store summaries.")
+flags.DEFINE_string("dataset", "BreastCancer", "Name of the dataset to load for training.")
+flags.DEFINE_string("shallow_layer", "exu", "Activation function used for the first layer: (1) relu, (2) exu")
+flags.DEFINE_string("hidden_layer", "relu", "Activation function used for the hidden layers: (1) relu, (2) exu")
+flags.DEFINE_boolean("regression", False, "Boolean for regression or classification")
+
 _N_FOLDS = 5
 
 
