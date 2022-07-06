@@ -8,6 +8,9 @@ For neural additive models, check out:
 - [Neural Additive Models: Interpretable Machine Learning with Neural Nets](https://arxiv.org/abs/2004.13912).
 - [TensorFlow OG Implementation](https://github.com/google-research/google-research/tree/master/neural_additive_models)
 
+For random survival forests (RSF):
+- [julianspaeth/random-survival-forest](https://github.com/julianspaeth/random-survival-forest)
+
 ## Dependencies
 
 ```
