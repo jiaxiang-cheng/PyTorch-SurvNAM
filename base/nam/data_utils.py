@@ -45,21 +45,21 @@ def read_dataset(dataset_name, header='infer', names=None, delim_whitespace=Fals
     return pd.read_csv(dataset_path, header=header, names=names, delim_whitespace=delim_whitespace)
 
 
-def load_breast_data():
+def load_gbsg2_data():
     """
     Load and return the Breast Cancer Wisconsin dataset (classification).
     """
-    breast = load_breast_cancer()
-    feature_names = list(breast.feature_names)
-
     gbsg2 = datasets.load_gbsg2()
     gbsg2_data = gbsg2[['age', 'tsize', 'pnodes', 'progrec', 'estrec']]
+
     gbsg2_horTh = pd.get_dummies(gbsg2.horTh, prefix='horTh')
     gbsg2_menostat = pd.get_dummies(gbsg2.menostat, prefix='menostat')
     gbsg2_tgrade = pd.get_dummies(gbsg2.tgrade, prefix='tgrade')
+
     gbsg2_data = pd.concat([gbsg2_data, gbsg2_horTh, gbsg2_menostat, gbsg2_tgrade], axis=1)
     gbsg2_features = gbsg2_data.columns.to_list()
     gbsg2_data = gbsg2_data.to_numpy()
+
     gbsg2_target = gbsg2[['cens']]
     gbsg2_target = gbsg2_target.to_numpy()
     gbsg2_target = np.squeeze(gbsg2_target)
@@ -70,11 +70,19 @@ def load_breast_data():
         'y': gbsg2_target,
     }
 
-    # return {
-    #     'problem': 'classification',
-    #     'X': pd.DataFrame(breast.data, columns=feature_names),
-    #     'y': breast.target,
-    # }
+
+def load_breast_data():
+    """
+    Load and return the Breast Cancer Wisconsin dataset (classification).
+    """
+    breast = load_breast_cancer()
+    feature_names = list(breast.feature_names)
+
+    return {
+        'problem': 'classification',
+        'X': pd.DataFrame(breast.data, columns=feature_names),
+        'y': breast.target,
+    }
 
 
 def load_adult_data():
@@ -264,6 +272,8 @@ def load_dataset(dataset_name):
         dataset = load_breast_data()
     elif dataset_name == 'Adult':
         dataset = load_adult_data()
+    elif dataset_name == 'gbsg2':
+        dataset = load_gbsg2_data()
     elif dataset_name == 'Credit':
         dataset = load_credit_data()
     elif dataset_name == 'Heart':

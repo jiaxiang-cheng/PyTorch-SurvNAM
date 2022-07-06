@@ -7,9 +7,9 @@ from absl import app
 from absl import flags
 from torch.utils.data import TensorDataset, DataLoader
 
-import nam.metrics
-import nam.data_utils
-from nam.model import *
+# import base.nam.metrics
+# from base.nam import data_utils
+from base.nam import *
 
 FLAGS = flags.FLAGS
 
@@ -34,7 +34,7 @@ flags.DEFINE_integer("id_fold", 1, "Index of the fold to be used")
 
 flags.DEFINE_list("hidden_units", [], "Amounts of neurons for additional hidden layers, e.g. 64,32,32")
 flags.DEFINE_string("log_file", None, "File where to store summaries.")
-flags.DEFINE_string("dataset", "BreastCancer", "Name of the dataset to load for training.")
+flags.DEFINE_string("dataset", "gbsg2", "Name of the dataset to load for training.")
 flags.DEFINE_string("shallow_layer", "exu", "Activation function used for the first layer: (1) relu, (2) exu")
 flags.DEFINE_string("hidden_layer", "relu", "Activation function used for the hidden layers: (1) relu, (2) exu")
 flags.DEFINE_boolean("regression", False, "Boolean for regression or classification")
@@ -67,7 +67,7 @@ def train_model(x_train, y_train, x_valid, y_valid, device):
     """
     model = NeuralAdditiveModel(
         input_size=x_train.shape[-1],
-        shallow_units=nam.data_utils.calculate_n_units(x_train, FLAGS.n_basis_functions, FLAGS.units_multiplier),
+        shallow_units=data_utils.calculate_n_units(x_train, FLAGS.n_basis_functions, FLAGS.units_multiplier),
         hidden_units=list(map(int, FLAGS.hidden_units)),
         shallow_layer=ExULayer if FLAGS.shallow_layer == "exu" else ReLULayer,
         hidden_layer=ExULayer if FLAGS.hidden_layer == "exu" else ReLULayer,
@@ -75,7 +75,7 @@ def train_model(x_train, y_train, x_valid, y_valid, device):
         feature_dropout=FLAGS.feature_dropout).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=FLAGS.learning_rate, weight_decay=FLAGS.l2_regularization)
-    criterion = nam.metrics.penalized_mse if FLAGS.regression else nam.metrics.penalized_cross_entropy
+    criterion = metrics.penalized_mse if FLAGS.regression else metrics.penalized_cross_entropy
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, gamma=0.995, step_size=1)
 
     train_dataset = TensorDataset(torch.tensor(x_train), torch.tensor(y_train))
@@ -87,14 +87,14 @@ def train_model(x_train, y_train, x_valid, y_valid, device):
     best_validation_score, best_weights = 0, None  # to store the optimal performance
 
     for epoch in range(FLAGS.training_epochs):
-        model = model.train()  # training the model
+        model = model.train()  # training the base
         total_loss = train_one_epoch(model, criterion, optimizer, train_loader, device)
         # record the log of training (training loss)
         logging.info(f"epoch {epoch} | train | {total_loss}")
 
         scheduler.step()  # update the learning rate
 
-        model = model.eval()  # validating the model
+        model = model.eval()  # validating the base
         metric, val_score = evaluate(model, validate_loader, device)
         # record the log of validation (validation score)
         logging.info(f"epoch {epoch} | validate | {metric}={val_score}")
@@ -109,9 +109,9 @@ def train_model(x_train, y_train, x_valid, y_valid, device):
             break
 
         best_validation_score = val_score  # update the optimal validation score
-        best_weights = copy.deepcopy(model.state_dict())  # update the optimal model
+        best_weights = copy.deepcopy(model.state_dict())  # update the optimal base
 
-    model.load_state_dict(best_weights)  # continue training from the optimal model
+    model.load_state_dict(best_weights)  # continue training from the optimal base
 
     return model
 
@@ -154,7 +154,7 @@ def evaluate(model, data_loader, device):
     for i, (x, y) in enumerate(data_loader, start=1):
         x, y = x.to(device), y.to(device)
         logits, fnns_out = model.forward(x)
-        metric, score = nam.metrics.calculate_metric(logits, y, regression=FLAGS.regression)
+        metric, score = metrics.calculate_metric(logits, y, regression=FLAGS.regression)
         total_score -= (total_score / i) - (score / i)
 
     return metric, total_score
@@ -168,16 +168,16 @@ def main(args):
         handlers.append(logging.FileHandler(FLAGS.log_file))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", handlers=handlers)
 
-    # cpu or gpu to train the model
+    # cpu or gpu to train the base
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     logging.info("load data")
 
-    train, (x_test, y_test) = nam.data_utils.create_test_train_fold(dataset=FLAGS.dataset,
-                                                                    id_fold=FLAGS.id_fold,
-                                                                    n_folds=_N_FOLDS,
-                                                                    n_splits=FLAGS.n_splits,
-                                                                    regression=not FLAGS.regression)
+    train, (x_test, y_test) = data_utils.create_test_train_fold(dataset=FLAGS.dataset,
+                                                                          id_fold=FLAGS.id_fold,
+                                                                          n_folds=_N_FOLDS,
+                                                                          n_splits=FLAGS.n_splits,
+                                                                          regression=not FLAGS.regression)
     test_dataset = TensorDataset(torch.tensor(x_test), torch.tensor(y_test))
     test_loader = DataLoader(test_dataset, batch_size=FLAGS.batch_size, shuffle=True)
 
