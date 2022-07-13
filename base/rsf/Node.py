@@ -2,8 +2,11 @@ from lifelines import NelsonAalenFitter
 from .splitting import find_split
 from .tree_helper import select_new_feature_indices
 
-class Node:
 
+class Node:
+    """
+    Tree Node
+    """
     def __init__(self, x, y, tree, f_idxs, n_features, unique_deaths=3, min_leaf=3, timeline=None):
         """
         A Node of the Survival Tree.

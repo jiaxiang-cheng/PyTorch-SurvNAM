@@ -9,7 +9,9 @@ from .scoring import concordance_index
 
 
 class RandomSurvivalForest:
-
+    """
+    Random Survival Forest
+    """
     def __init__(self, n_estimators=100, min_leaf=3, unique_deaths=3,
                  n_jobs=None, parallelization_backend="multiprocessing", oob_score=False):
         """

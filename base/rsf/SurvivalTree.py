@@ -3,8 +3,11 @@ from .splitting import find_split
 from .tree_helper import select_new_feature_indices
 import time
 
-class SurvivalTree:
 
+class SurvivalTree:
+    """
+    Survival Tree
+    """
     def __init__(self, x, y, f_idxs, n_features, unique_deaths=3, min_leaf=3, timeline=None):
         """
         A Survival Tree to predict survival.
@@ -55,7 +58,6 @@ class SurvivalTree:
                             tree=self, f_idxs=rf_idxs, n_features=self.n_features,
                             unique_deaths=self.unique_deaths, min_leaf=self.min_leaf,
                             timeline=self.timeline)
-
             return self
         else:
             self.prediction_possible = False
