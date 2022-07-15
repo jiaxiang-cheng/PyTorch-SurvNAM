@@ -22,7 +22,7 @@ feature_dropout = 0.0  # "Hyper-parameter: Prob. with which features are dropped
 
 training_epochs = 10  # "The number of epochs to run training for."
 early_stopping_epochs = 60  # "Early stopping epochs"
-batch_size = 32  # "Hyper-parameter: batch size."
+batch_size = 1  # "Hyper-parameter: batch size."
 data_split = 1  # "Dataset split index to use. Possible values are 1 to `num_splits`."
 seed = 1  # "Seed used for reproducibility."
 n_basis_functions = 1000  # "Number of basis functions to use in a FeatureNN for a real-valued feature."
@@ -36,7 +36,7 @@ log_file = None  # "File where to store summaries."
 dataset = "gbsg2"  # "Name of the dataset to load for training."
 shallow_layer = "exu"  # "Activation function used for the first layer: (1) relu, (2) exu"
 hidden_layer = "relu"  # "Activation function used for the hidden layers: (1) relu, (2) exu"
-regression = False  # "Boolean for regression or classification"
+regression = True  # "Boolean for regression or classification"
 
 n_folds = 5
 
@@ -54,7 +54,7 @@ def seed_everything(seed):
     torch.backends.cudnn.benchmark = False
 
 
-def train_model(x_train, y_train, x_valid, y_valid, device):
+def train_model(x_train, y_train, x_valid, y_valid, device, rsf):
     """
 
     :param x_train:
@@ -74,7 +74,8 @@ def train_model(x_train, y_train, x_valid, y_valid, device):
         feature_dropout=feature_dropout).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=l2_regularization)
-    criterion = metrics.penalized_mse if regression else metrics.penalized_cross_entropy
+    # criterion = metrics.penalized_mse if regression else metrics.penalized_cross_entropy
+    criterion = metrics.survnam_loss
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, gamma=0.995, step_size=1)
 
     train_dataset = TensorDataset(torch.tensor(x_train), torch.tensor(y_train))
@@ -87,14 +88,14 @@ def train_model(x_train, y_train, x_valid, y_valid, device):
 
     for epoch in range(training_epochs):
         model = model.train()  # training the base
-        total_loss = train_one_epoch(model, criterion, optimizer, train_loader, device)
+        total_loss = train_one_epoch(model, criterion, optimizer, train_loader, device, rsf)
         # record the log of training (training loss)
         logging.info(f"epoch {epoch} | train | {total_loss}")
 
         scheduler.step()  # update the learning rate
 
         model = model.eval()  # validating the base
-        metric, val_score = evaluate(model, validate_loader, device)
+        metric, val_score, _ = evaluate(model, validate_loader, device)
         # record the log of validation (validation score)
         logging.info(f"epoch {epoch} | validate | {metric}={val_score}")
 
@@ -115,7 +116,7 @@ def train_model(x_train, y_train, x_valid, y_valid, device):
     return model
 
 
-def train_one_epoch(model, criterion, optimizer, data_loader, device):
+def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf):
     """
 
     :param model:
@@ -129,8 +130,12 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device):
     total_loss = 0
     for i, (x, y) in pbar:
         x, y = x.to(device), y.to(device)
+        # print("x", x)
         logits, fnns_out = model.forward(x)
-        loss = criterion(logits, y, fnns_out, feature_penalty=output_regularization)
+        # print("logits", logits)
+        surv = rsf.predict_cumulative_hazard_function(x, return_array=True)
+
+        loss = criterion(logits, surv, rsf.event_times_)
         total_loss -= (total_loss / i) - (loss.item() / i)
         model.zero_grad()
         loss.backward()
@@ -156,7 +161,7 @@ def evaluate(model, data_loader, device):
         metric, score = metrics.calculate_metric(logits, y, regression=regression)
         total_score -= (total_score / i) - (score / i)
 
-    return metric, total_score
+    return metric, total_score, logits
 
 
 if __name__ == "__main__":
