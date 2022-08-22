@@ -25,7 +25,7 @@ Xt.loc[:, "tgrade"] = grade_num
 random_state = 20
 X_train, X_test, y_train, y_test = train_test_split(Xt, y, test_size=0.25, random_state=random_state)
 
-# Training =============================================================================================================
+# =============================================== Training =============================================================
 
 # Several split criterion have been proposed in the past, but the most widespread one is based on the
 # log-rank test, which you probably know from comparing survival curves among two or more groups. Using the training
@@ -41,7 +41,7 @@ rsf.fit(X_train, y_train)
 # We can check how well the model performs by evaluating it on the test data.
 rsf.score(X_test, y_test)
 
-# Predicting ===========================================================================================================
+# =============================================== Predicting ===========================================================
 
 # For prediction, a sample is dropped down each tree in the forest until it reaches a terminal node. Data
 # in each terminal is used to non-parametrically estimate the survival and cumulative hazard function using the
@@ -57,6 +57,7 @@ X_test_sel = pd.concat((X_test_sorted.head(3), X_test_sorted.tail(3)))
 # first three patients.
 pd.Series(rsf.predict(X_test_sel))
 
+# -------------------------------- PLOT SURVIVAL FUNCTIONS -------------------------------------------------------------
 # We can have a more detailed insight by considering the predicted survival function. It shows that the biggest
 # difference occurs roughly within the first 750 days.
 surv = rsf.predict_survival_function(X_test_sel, return_array=True)
@@ -69,6 +70,7 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
+# -------------------------------- PLOT CUMULATIVE HAZARD FUNCTION -----------------------------------------------------
 # Alternatively, we can also plot the predicted cumulative hazard function.
 surv = rsf.predict_cumulative_hazard_function(X_test_sel, return_array=True)
 
@@ -80,7 +82,7 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
-# Permutation-based Feature Importance =================================================================================
+# ================================== Permutation-based Feature Importance ==============================================
 
 # The implementation is based on scikit-learn’s Random Forest implementation and
 # inherits many features, such as building trees in parallel. What’s currently missing is feature importance via the
