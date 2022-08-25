@@ -52,8 +52,8 @@ def penalized_mse(logits, truth, fnn_out, feature_penalty=0.):
     return F.mse_loss(logits.view(-1), truth.view(-1)) + feature_loss(fnn_out, feature_penalty)
 
 
-def survnam_loss(logits, rsf_preds, event_times):
-    rsf_preds = np.squeeze(rsf_preds)
+def survnam_loss(logits, event_times):
+    # rsf_preds = np.squeeze(rsf_preds)
 
     loss = 0
     limit = event_times.shape[0]

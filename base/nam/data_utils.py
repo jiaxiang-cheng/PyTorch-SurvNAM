@@ -22,6 +22,12 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OrdinalEncoder
+
+from sksurv.datasets import load_gbsg2
+from sksurv.preprocessing import OneHotEncoder
+from sksurv.ensemble import RandomSurvivalForest
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -61,21 +67,6 @@ def load_gbsg2_data():
     """
     Load and return the Breast Cancer Wisconsin dataset (classification).
     """
-    gbsg2 = datasets.load_gbsg2()
-    # gbsg2_data = gbsg2[['age', 'tsize', 'pnodes', 'progrec', 'estrec']]
-    #
-    # gbsg2_horTh = pd.get_dummies(gbsg2.horTh, prefix='horTh')
-    # gbsg2_menostat = pd.get_dummies(gbsg2.menostat, prefix='menostat')
-    # gbsg2_tgrade = pd.get_dummies(gbsg2.tgrade, prefix='tgrade')
-    #
-    # gbsg2_data = pd.concat([gbsg2_data, gbsg2_horTh, gbsg2_menostat, gbsg2_tgrade], axis=1)
-    # gbsg2_features = gbsg2_data.columns.to_list()
-    # gbsg2_data = gbsg2_data.to_numpy()
-    #
-    gbsg2_target = gbsg2[['cens']]
-    gbsg2_target = gbsg2_target.to_numpy()
-    gbsg2_target = np.squeeze(gbsg2_target)
-
     # First, we need to load the data and transform it into numeric values.
     X, y = load_gbsg2()
 
@@ -86,10 +77,13 @@ def load_gbsg2_data():
     Xt = OneHotEncoder().fit_transform(X_no_grade)
     Xt.loc[:, "tgrade"] = grade_num
 
+    gbsg2_target = pd.DataFrame(y)
+    y = gbsg2_target.cens.to_numpy().astype(int)
+
     return {
         'problem': 'classification',
         'X': Xt,
-        'y': gbsg2_target,
+        'y': y,
     }
 
 
