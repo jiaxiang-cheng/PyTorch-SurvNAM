@@ -52,29 +52,10 @@ def penalized_mse(logits, truth, fnn_out, feature_penalty=0.):
     return F.mse_loss(logits.view(-1), truth.view(-1)) + feature_loss(fnn_out, feature_penalty)
 
 
-def survnam_loss(logits, event_times):
-    # rsf_preds = np.squeeze(rsf_preds)
+def survnam_loss(logits, truths):
+    # print(torch.subtract(truths, logits))
 
-    loss = 0
-    limit = event_times.shape[0]
-    # print(limit)
-    for i, j in enumerate(time):
-        flag = 0
-        while event_times[flag] < j:
-            flag += 1
-            if flag > limit - 1:
-                flag = limit - 1
-                break
-        duration = j - time[i - 1] if i > 0 else j
-        # print("rsf_preds[flag]", rsf_preds[flag])
-        # print("cum_hazard[i]", cum_hazard[i])
-        # print("logits", logits)
-        # print("duration", duration)
-        loss += torch.mul(torch.pow(torch.tensor(rsf_preds[flag]) -
-                                    torch.mul(torch.tensor(cum_hazard[i]), torch.exp(logits)), 2),
-                          torch.tensor(duration / 3000))
-    # print(loss)
-    return loss
+    return torch.pow(torch.subtract(truths, logits), 2)
 
 
 def calculate_metric(logits, truths, regression=True):

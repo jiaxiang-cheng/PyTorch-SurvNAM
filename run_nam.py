@@ -1,6 +1,8 @@
+import math
 import os
 
 import pandas as pd
+import torch
 import tqdm
 import copy
 import random
@@ -131,9 +133,11 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
     pbar = tqdm.tqdm(enumerate(data_loader, start=1), total=len(data_loader))
     total_loss = 0
     for i, (x, y) in pbar:
+        x_loss = 0
         # print("x", x[0][0].item())
         # print("x", x)
 
+        # ================ Generate Points Following Normal Distribution ===============================================
         def generate_normal(mean, std, N=100):
             s = np.random.normal(mean, std, N)
             return s
@@ -160,14 +164,17 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
         df_input['tgrade'] = x[0][7].item()
 
         df_input.columns = ['age', 'estrec', 'horTh=yes', 'menostat=Post', 'pnodes', 'progrec', 'tsize', 'tgrade']
-        # print(df_input)
+        # print(df_input)  generated N (=100) points for the explained point
 
         chf_rsf = rsf.predict_cumulative_hazard_function(df_input, return_array=True)
 
-        for i, s in enumerate(chf_rsf):
-            plt.step(rsf.event_times_, s, where="post", label=str(i))
+        # for i, s in enumerate(chf_rsf):
+        #     plt.step(rsf.event_times_, s, where="post", label=str(i))
 
-        # print(chf_rsf[0])
+        # print(chf_rsf[0])  CHF of 0th instance by RSF
+        # [0.00207913 0.00207913 0.00229458 0.00318554 0.00665146 0.00665146
+        #  0.01027261 0.01223869 0.01479719 0.01945229 0.02890883 0.0289664
+        #  0.03129134 0.03592671 0.037428   0.0419167  0.04567486 0.04567486 ...
 
         # plt.ylabel("Cumulative hazard")
         # plt.xlabel("Time in days")
@@ -186,18 +193,87 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
         logits, fnns_out = model.forward(x)
         # print("logits", logits)  # final additive outputs
         # print("fnns_out", fnns_out)  # outputs from each shape functions
+        # print("logits", logits)  # logits tensor([1.1540], grad_fn=<AddBackward0>)
 
-        surv = rsf.predict_cumulative_hazard_function(x, return_array=True)
+        # print("nelson_est", nelson_est, len(nelson_est), type(nelson_est))  # length = 454
+        # 18.0      0.000000
+        #             ...
+        # 2471.0    1.028009
+        # 2551.0    1.028009
 
-        loss = criterion(logits, surv, rsf.event_times_)
+        # print("rsf.event_times_", rsf.event_times_, len(rsf.event_times_), type(rsf.event_times_))  # length = 215
+        # [72.   98.  120.  160.  169.  171.  173.  177.  180.  184.  191.  195.
+        #  205.  223.  227.  233.  238.  241.  242.  247.  249.  272.  281.  286.
+        #  288.  293.  307.  308.  329.  336.  338.  344.  348.  350.  357.  359.
+        #  360.  369.  370.  372.  374.  375.  385.  392.  394.  403.  410.  415. ...
 
-        total_loss -= (total_loss / i) - (loss.item() / i)
+        # print("chf_rsf[0]", chf_rsf[0], len(chf_rsf[0]), type(chf_rsf[0]))  # length = 215
+        # [0.00442582 0.00446031 0.00449479 0.00630778 0.00834145 0.00841288
+        #  0.00850506 0.00923685 0.01042667 0.01404961 0.02457283 0.02506429
+        #  0.02506429 0.0356179  0.03565238 0.03629387 0.03876501 0.03909379 ...
 
-        model.zero_grad()
+        # print(nelson_est.loc[72])  # 0.001988071570576899
+        list_nelson = []
+        for _, j in enumerate(rsf.event_times_):
+            list_nelson.append(nelson_est.loc[j])
 
-        loss.backward()
+        est_chf = pd.concat([pd.DataFrame(rsf.event_times_),
+                             pd.DataFrame(list_nelson)], axis=1)
+        # est_chf.columns = ['event_times', 'chf_nelson', 'chf_rsf']
+        for _, s in enumerate(chf_rsf):
+            est_chf = pd.concat([est_chf,
+                                 pd.DataFrame(s)], axis=1)
+            # plt.step(rsf.event_times_, s, where="post", label=str(i))
+        column_list = ['event_times', 'chf_nelson']
+        for num in range(100):
+            column_list.append('chf_rsf_{}'.format(num))
+        est_chf.columns = column_list
+        # print(est_chf)
+        #     event_times chf_rsf     chf_nelson
+        # 0   72.0        0.001709    0.001988
+        # 1   98.0        0.001709    0.003980
+        # 2   120.0       0.002140    0.005980
+        # 3   160.0       0.002745    0.007984
+        # 4   169.0       0.007239    0.009996
+
+        # surv = rsf.predict_cumulative_hazard_function(x, return_array=True)
+        # loss = 0
+        df_temp = df_input.copy()
+        df_temp.loc[len(df_temp)] = x[0].tolist()
+        # print("df_temp", df_temp)
+        # print("pd.Series(x[0])", pd.Series(x[0]))
+        for i in range(100):
+            dx = sum((df_temp.iloc[i] - df_temp.iloc[-1]) ** 2) ** 0.5
+            weight_i = 1 - (dx / d_max) ** 0.5
+            # print("weight_i", weight_i)
+            for j in range(215):
+                if j == 0:
+                    duration_j = est_chf['event_times'].loc[j]
+                    phi = 0
+                else:
+                    duration_j = est_chf['event_times'].loc[j] - est_chf['event_times'].loc[j - 1]
+                    phi = math.log(est_chf['chf_rsf_{}'.format(i)].loc[j]) - math.log(est_chf['chf_nelson'].loc[j])
+                # print("duration_j", duration_j)
+                # print("phi", phi)
+                truths = phi * ((weight_i * duration_j) ** 0.5)
+                # print("truths", truths)
+                # print("logits", logits)
+                logits_j = logits * ((weight_i * duration_j) ** 0.5)
+                truths = torch.as_tensor(truths)
+                loss = criterion(logits_j, truths)
+
+                loss.backward(retain_graph=True)
+
+                x_loss += loss.item()
+
+        print("x_loss:", x_loss)
+        # loss = criterion(logits, est_chf)
+
+        # total_loss -= (total_loss / i) - (loss.item() / i)
+        total_loss += x_loss
 
         optimizer.step()
+        model.zero_grad()
 
         pbar.set_description(f"train | loss = {total_loss:.5f}")
 
@@ -267,30 +343,31 @@ if __name__ == "__main__":
     # ============ Find Max Distances ========
     d_max = 0
     for i in range(X_train.shape[0]):
-        for j in range(i):
-            d_ij = sum((X_train.iloc[i] - X_train.iloc[0]) ** 2) ** 0.5
+        for j in range(i + 1, X_train.shape[0]):
+            d_ij = sum((X_train.iloc[j] - X_train.iloc[i]) ** 2) ** 0.5
             d_max = d_ij if (d_ij >= d_max) else d_max
 
     d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize = 0, 0, 0, 0, 0
     for i in range(X_train.shape[0]):
-        for j in range(i):
-            d_ij_age = abs(X_train.iloc[i].age - X_train.iloc[0].age)
+        for j in range(i + 1, X_train.shape[0]):
+            d_ij_age = abs(X_train.iloc[j].age - X_train.iloc[i].age)
             d_max_age = d_ij_age if (d_ij_age >= d_max_age) else d_max_age
 
-            d_ij_estrec = abs(X_train.iloc[i].estrec - X_train.iloc[0].estrec)
+            d_ij_estrec = abs(X_train.iloc[j].estrec - X_train.iloc[i].estrec)
             d_max_estrec = d_ij_estrec if (d_ij_estrec >= d_max_estrec) else d_max_estrec
 
-            d_ij_pnodes = abs(X_train.iloc[i].pnodes - X_train.iloc[0].pnodes)
+            d_ij_pnodes = abs(X_train.iloc[j].pnodes - X_train.iloc[i].pnodes)
             d_max_pnodes = d_ij_age if (d_ij_pnodes >= d_max_pnodes) else d_max_pnodes
 
-            d_ij_progrec = abs(X_train.iloc[i].progrec - X_train.iloc[0].progrec)
+            d_ij_progrec = abs(X_train.iloc[j].progrec - X_train.iloc[i].progrec)
             d_max_progrec = d_ij_progrec if (d_ij_progrec >= d_max_progrec) else d_max_progrec
 
-            d_ij_tsize = abs(X_train.iloc[i].tsize - X_train.iloc[0].tsize)
+            d_ij_tsize = abs(X_train.iloc[j].tsize - X_train.iloc[i].tsize)
             d_max_tsize = d_ij_tsize if (d_ij_tsize >= d_max_tsize) else d_max_tsize
 
     print(d_max, d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize)
     d_list = [d_max, d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize]
+    # print(d_list) 2.2164908688956717 1.0 0.9265734265734266 0.7457627118644068 1.0 1.0000000000000002
 
     rsf = RandomSurvivalForest(n_estimators=1000,
                                min_samples_split=10,
