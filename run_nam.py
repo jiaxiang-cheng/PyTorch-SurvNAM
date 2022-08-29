@@ -45,6 +45,18 @@ regression = True  # "Boolean for regression or classification"
 n_folds = 5
 
 
+def generate_normal(mean, std, N=100):
+    """
+
+    :param mean:
+    :param std:
+    :param N:
+    :return:
+    """
+    s = np.random.normal(mean, std, N)
+    return s
+
+
 def seed_everything(seed):
     """
 
@@ -130,19 +142,18 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
     :param device:
     :return:
     """
+
+    # tqdm is a library in Python which is used for creating Progress Meters or Progress Bars.tqdm got its name from
+    # the Arabic name taqaddum which means 'progress'.
     pbar = tqdm.tqdm(enumerate(data_loader, start=1), total=len(data_loader))
+
     total_loss = 0
     for i, (x, y) in pbar:
-        x_loss = 0
-        # print("x", x[0][0].item())
-        # print("x", x)
+        x_loss = 0  # print("x", x[0][0].item()) # print("x", x)
 
-        # ================ Generate Points Following Normal Distribution ===============================================
-        def generate_normal(mean, std, N=100):
-            s = np.random.normal(mean, std, N)
-            return s
+        # ============================== Generate Points Following Normal Distribution =================================
 
-        [d_max, d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize] = d_list
+        [_, d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize] = d_list
 
         gen_age = generate_normal(x[0][0].item(), d_max_age * 0.1)
         gen_estrec = generate_normal(x[0][1].item(), d_max_estrec * 0.1)
@@ -150,47 +161,27 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
         gen_progrec = generate_normal(x[0][5].item(), d_max_progrec * 0.1)
         gen_tsize = generate_normal(x[0][6].item(), d_max_tsize * 0.1)
 
-        df_input = pd.concat([pd.DataFrame(gen_age),
-                              pd.DataFrame(gen_estrec)], axis=1)
-
+        df_input = pd.concat([pd.DataFrame(gen_age), pd.DataFrame(gen_estrec)], axis=1)
         df_input['horTh=yes'] = x[0][2].item()
         df_input['menostat=Post'] = x[0][3].item()
-
-        df_input = pd.concat([df_input,
-                              pd.DataFrame(gen_pnodes),
-                              pd.DataFrame(gen_progrec),
+        df_input = pd.concat([df_input, pd.DataFrame(gen_pnodes), pd.DataFrame(gen_progrec),
                               pd.DataFrame(gen_tsize)], axis=1)
-
         df_input['tgrade'] = x[0][7].item()
-
         df_input.columns = ['age', 'estrec', 'horTh=yes', 'menostat=Post', 'pnodes', 'progrec', 'tsize', 'tgrade']
         # print(df_input)  generated N (=100) points for the explained point
 
-        chf_rsf = rsf.predict_cumulative_hazard_function(df_input, return_array=True)
+        # largest distance among all generated points
+        d_max = max_euclidean_distance(df_input)
 
-        # for i, s in enumerate(chf_rsf):
-        #     plt.step(rsf.event_times_, s, where="post", label=str(i))
+        # input = df_input.iloc[0].astype(np.float32)
+        # input = torch.tensor(input.values)
+        # # print("input", input)
+        # x = torch.unsqueeze(input, dim=0)
+        # # print("x", x)
+        # x, y = x.to(device), y.to(device)
+        # # print("x", x)  # normalized input features of one instance
 
-        # print(chf_rsf[0])  CHF of 0th instance by RSF
-        # [0.00207913 0.00207913 0.00229458 0.00318554 0.00665146 0.00665146
-        #  0.01027261 0.01223869 0.01479719 0.01945229 0.02890883 0.0289664
-        #  0.03129134 0.03592671 0.037428   0.0419167  0.04567486 0.04567486 ...
-
-        # plt.ylabel("Cumulative hazard")
-        # plt.xlabel("Time in days")
-        # # plt.legend()
-        # plt.grid(True)
-        # plt.show()
-
-        input = df_input.iloc[0].astype(np.float32)
-        input = torch.tensor(input.values)
-        # print("input", input)
-        x = torch.unsqueeze(input, dim=0)
-        # print("x", x)
-        x, y = x.to(device), y.to(device)
-        # print("x", x)  # normalized input features of one instance
-
-        logits, fnns_out = model.forward(x)
+        # logits, fnns_out = model.forward(x)
         # print("logits", logits)  # final additive outputs
         # print("fnns_out", fnns_out)  # outputs from each shape functions
         # print("logits", logits)  # logits tensor([1.1540], grad_fn=<AddBackward0>)
@@ -212,22 +203,32 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
         #  0.00850506 0.00923685 0.01042667 0.01404961 0.02457283 0.02506429
         #  0.02506429 0.0356179  0.03565238 0.03629387 0.03876501 0.03909379 ...
 
-        # print(nelson_est.loc[72])  # 0.001988071570576899
-        list_nelson = []
-        for _, j in enumerate(rsf.event_times_):
-            list_nelson.append(nelson_est.loc[j])
+        # CHF estimated by RSF for generated points (N = 100)
+        chf_rsf = rsf.predict_cumulative_hazard_function(df_input, return_array=True)
+        # print(chf_rsf[0])  CHF of 0th instance by RSF
+        # [0.00207913 0.00207913 0.00229458 0.00318554 0.00665146 0.00665146
+        #  0.01027261 0.01223869 0.01479719 0.01945229 0.02890883 0.0289664
+        #  0.03129134 0.03592671 0.037428   0.0419167  0.04567486 0.04567486 ...
 
-        est_chf = pd.concat([pd.DataFrame(rsf.event_times_),
-                             pd.DataFrame(list_nelson)], axis=1)
-        # est_chf.columns = ['event_times', 'chf_nelson', 'chf_rsf']
-        for _, s in enumerate(chf_rsf):
-            est_chf = pd.concat([est_chf,
-                                 pd.DataFrame(s)], axis=1)
+        # find all estimated CHF by nelson-aalon estimator corresponding to time points with events
+        list_nelson = []
+        for _, event_time in enumerate(rsf.event_times_):
+            # print(nelson_est.loc[72])  # 0.001988071570576899
+            list_nelson.append(nelson_est.loc[event_time])
+        # append the CHF by nelson-aalon estimator
+        est_chf = pd.concat([pd.DataFrame(rsf.event_times_), pd.DataFrame(list_nelson)], axis=1)
+
+        # append all CHF by random survival forest for generated points
+        for _, chf_generated_point in enumerate(chf_rsf):
+            est_chf = pd.concat([est_chf, pd.DataFrame(chf_generated_point)], axis=1)
             # plt.step(rsf.event_times_, s, where="post", label=str(i))
+
+        # formulate the column names
         column_list = ['event_times', 'chf_nelson']
         for num in range(100):
             column_list.append('chf_rsf_{}'.format(num))
         est_chf.columns = column_list
+
         # print(est_chf)
         #     event_times chf_rsf     chf_nelson
         # 0   72.0        0.001709    0.001988
@@ -238,35 +239,41 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
 
         # surv = rsf.predict_cumulative_hazard_function(x, return_array=True)
         # loss = 0
-        df_temp = df_input.copy()
-        df_temp.loc[len(df_temp)] = x[0].tolist()
+
+        # df_temp = df_input.copy()
+        df_input.loc[len(df_input)] = x[0].tolist()  # append the explained point to the end
         # print("df_temp", df_temp)
         # print("pd.Series(x[0])", pd.Series(x[0]))
-        for i in range(100):
-            dx = sum((df_temp.iloc[i] - df_temp.iloc[-1]) ** 2) ** 0.5
+
+        for k in range(100):
+
+            xk = df_input.iloc[k].astype(np.float32)
+            xk = torch.unsqueeze(torch.tensor(xk.values), dim=0)
+            # x, y = x.to(device), y.to(device)
+            logits, fnns_out = model.forward(xk)
+
+            dx = sum((df_input.iloc[k] - df_input.iloc[-1]) ** 2) ** 0.5
             weight_i = 1 - (dx / d_max) ** 0.5
             # print("weight_i", weight_i)
+
             for j in range(215):
                 if j == 0:
-                    duration_j = est_chf['event_times'].loc[j]
+                    duration_j = est_chf['event_times'].loc[j] / est_chf['event_times'].loc[214]
                     phi = 0
                 else:
-                    duration_j = est_chf['event_times'].loc[j] - est_chf['event_times'].loc[j - 1]
-                    phi = math.log(est_chf['chf_rsf_{}'.format(i)].loc[j]) - math.log(est_chf['chf_nelson'].loc[j])
-                # print("duration_j", duration_j)
-                # print("phi", phi)
-                truths = phi * ((weight_i * duration_j) ** 0.5)
-                # print("truths", truths)
-                # print("logits", logits)
+                    duration_j = (est_chf['event_times'].loc[j] - est_chf['event_times'].loc[j - 1]) \
+                                 / est_chf['event_times'].loc[214]
+                    phi = math.log(est_chf['chf_rsf_{}'.format(k)].loc[j]) - math.log(est_chf['chf_nelson'].loc[j])
+
                 logits_j = logits * ((weight_i * duration_j) ** 0.5)
+                truths = phi * ((weight_i * duration_j) ** 0.5)
                 truths = torch.as_tensor(truths)
+
                 loss = criterion(logits_j, truths)
-
                 loss.backward(retain_graph=True)
-
                 x_loss += loss.item()
 
-        print("x_loss:", x_loss)
+        # print("x_loss:", x_loss)
         # loss = criterion(logits, est_chf)
 
         # total_loss -= (total_loss / i) - (loss.item() / i)
@@ -297,6 +304,40 @@ def evaluate(model, data_loader, device):
         total_score -= (total_score / i) - (score / i)
 
     return metric, total_score, logits
+
+
+def max_euclidean_distance(df):
+    """
+    Find the maximum Euclidean distance among instances in dataframe
+    :param df: input dataframe with all instance
+    :return: max distance among samples
+    """
+    max_distance = 0
+    for former in range(df.shape[0]):
+        for latter in range(former + 1, df.shape[0]):
+            temp_distance = sum((df.iloc[latter] - df.iloc[former]) ** 2) ** 0.5
+            max_distance = temp_distance if (temp_distance >= max_distance) else max_distance
+    return max_distance
+
+
+def max_variable_distances(df, variable_list):
+    """
+    Find the maximum absolute distances among selected variables
+    :param df: input dataframe with all instances
+    :param variable_list: selected variables for finding distances
+    :return: max distances of variables
+    """
+    max_distance = {}
+    for _, variable in enumerate(numeric_list):
+        max_distance[variable] = 0
+
+    for former in range(df.shape[0]):
+        for latter in range(former + 1, df.shape[0]):
+            temp_distance = abs(df.iloc[latter] - df.iloc[former])
+            for _, variable in enumerate(variable_list):
+                max_distance[variable] = temp_distance[variable] if (temp_distance[variable] > max_distance[variable]) \
+                    else max_distance[variable]
+    return max_distance
 
 
 if __name__ == "__main__":
@@ -341,33 +382,13 @@ if __name__ == "__main__":
     print(X_train.head(3))
 
     # ============ Find Max Distances ========
-    d_max = 0
-    for i in range(X_train.shape[0]):
-        for j in range(i + 1, X_train.shape[0]):
-            d_ij = sum((X_train.iloc[j] - X_train.iloc[i]) ** 2) ** 0.5
-            d_max = d_ij if (d_ij >= d_max) else d_max
+    d_max = max_euclidean_distance(X_train)  # max euclidean distance among all samples after normalization
 
-    d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize = 0, 0, 0, 0, 0
-    for i in range(X_train.shape[0]):
-        for j in range(i + 1, X_train.shape[0]):
-            d_ij_age = abs(X_train.iloc[j].age - X_train.iloc[i].age)
-            d_max_age = d_ij_age if (d_ij_age >= d_max_age) else d_max_age
-
-            d_ij_estrec = abs(X_train.iloc[j].estrec - X_train.iloc[i].estrec)
-            d_max_estrec = d_ij_estrec if (d_ij_estrec >= d_max_estrec) else d_max_estrec
-
-            d_ij_pnodes = abs(X_train.iloc[j].pnodes - X_train.iloc[i].pnodes)
-            d_max_pnodes = d_ij_age if (d_ij_pnodes >= d_max_pnodes) else d_max_pnodes
-
-            d_ij_progrec = abs(X_train.iloc[j].progrec - X_train.iloc[i].progrec)
-            d_max_progrec = d_ij_progrec if (d_ij_progrec >= d_max_progrec) else d_max_progrec
-
-            d_ij_tsize = abs(X_train.iloc[j].tsize - X_train.iloc[i].tsize)
-            d_max_tsize = d_ij_tsize if (d_ij_tsize >= d_max_tsize) else d_max_tsize
-
-    print(d_max, d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize)
-    d_list = [d_max, d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize]
-    # print(d_list) 2.2164908688956717 1.0 0.9265734265734266 0.7457627118644068 1.0 1.0000000000000002
+    numeric_list = ['age', 'estrec', 'pnodes', 'progrec', 'tsize']
+    max_distances = max_variable_distances(X_train, numeric_list)
+    d_list = [d_max, max_distances['age'], max_distances['estrec'],
+              max_distances['pnodes'], max_distances['progrec'], max_distances['tsize']]
+    # print(d_list)  # [2.2164908688956717, 1.0, 0.9265734265734266, 1.0, 1.0, 1.0000000000000002]
 
     rsf = RandomSurvivalForest(n_estimators=1000,
                                min_samples_split=10,
@@ -418,10 +439,10 @@ if __name__ == "__main__":
         try:
             (x_train, y_train), (x_validate, y_validate) = next(train)
             model = train_model(x_train, y_train, x_validate, y_validate, device, rsf, d_list, y_nelson)
-            metric, score = evaluate(model, test_loader, device)
-            test_scores.append(score)
-            logging.info(f"fold {len(test_scores)}/{n_splits} | test | {metric}={test_scores[-1]}")
+            # metric, score = evaluate(model, test_loader, device)
+            # test_scores.append(score)
+            # logging.info(f"fold {len(test_scores)}/{n_splits} | test | {metric}={test_scores[-1]}")
         except StopIteration:
             break
 
-        logging.info(f"mean test score={test_scores[-1]}")
+        # logging.info(f"mean test score={test_scores[-1]}")
