@@ -10,6 +10,7 @@ import logging
 from absl import app
 from absl import flags
 from torch.utils.data import TensorDataset, DataLoader
+from sklearn.preprocessing import MinMaxScaler
 
 # import base.nam.metrics
 # from base.nam import data_utils
@@ -43,9 +44,10 @@ hidden_layer = "relu"  # "Activation function used for the hidden layers: (1) re
 regression = True  # "Boolean for regression or classification"
 
 n_folds = 5
+N_GEN = 100
 
 
-def generate_normal(mean, std, N=100):
+def generate_normal(mean, std, N=N_GEN):
     """
 
     :param mean:
@@ -147,14 +149,13 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
     # the Arabic name taqaddum which means 'progress'.
     pbar = tqdm.tqdm(enumerate(data_loader, start=1), total=len(data_loader))
 
+    [_, d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize] = d_list
+
     total_loss = 0
     for i, (x, y) in pbar:
         x_loss = 0  # print("x", x[0][0].item()) # print("x", x)
 
         # ============================== Generate Points Following Normal Distribution =================================
-
-        [_, d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize] = d_list
-
         gen_age = generate_normal(x[0][0].item(), d_max_age * 0.1)
         gen_estrec = generate_normal(x[0][1].item(), d_max_estrec * 0.1)
         gen_pnodes = generate_normal(x[0][4].item(), d_max_pnodes * 0.1)
@@ -203,13 +204,6 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
         #  0.00850506 0.00923685 0.01042667 0.01404961 0.02457283 0.02506429
         #  0.02506429 0.0356179  0.03565238 0.03629387 0.03876501 0.03909379 ...
 
-        # CHF estimated by RSF for generated points (N = 100)
-        chf_rsf = rsf.predict_cumulative_hazard_function(df_input, return_array=True)
-        # print(chf_rsf[0])  CHF of 0th instance by RSF
-        # [0.00207913 0.00207913 0.00229458 0.00318554 0.00665146 0.00665146
-        #  0.01027261 0.01223869 0.01479719 0.01945229 0.02890883 0.0289664
-        #  0.03129134 0.03592671 0.037428   0.0419167  0.04567486 0.04567486 ...
-
         # find all estimated CHF by nelson-aalon estimator corresponding to time points with events
         list_nelson = []
         for _, event_time in enumerate(rsf.event_times_):
@@ -217,6 +211,13 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
             list_nelson.append(nelson_est.loc[event_time])
         # append the CHF by nelson-aalon estimator
         est_chf = pd.concat([pd.DataFrame(rsf.event_times_), pd.DataFrame(list_nelson)], axis=1)
+
+        # CHF estimated by RSF for generated points (N = 100)
+        chf_rsf = rsf.predict_cumulative_hazard_function(df_input, return_array=True)
+        # print(chf_rsf[0])  CHF of 0th instance by RSF
+        # [0.00207913 0.00207913 0.00229458 0.00318554 0.00665146 0.00665146
+        #  0.01027261 0.01223869 0.01479719 0.01945229 0.02890883 0.0289664
+        #  0.03129134 0.03592671 0.037428   0.0419167  0.04567486 0.04567486 ...
 
         # append all CHF by random survival forest for generated points
         for _, chf_generated_point in enumerate(chf_rsf):
@@ -241,32 +242,38 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
         # loss = 0
 
         # df_temp = df_input.copy()
-        df_input.loc[len(df_input)] = x[0].tolist()  # append the explained point to the end
+        df_input.loc[N_GEN] = x[0].tolist()  # append the explained point to the end
         # print("df_temp", df_temp)
         # print("pd.Series(x[0])", pd.Series(x[0]))
 
-        for k in range(100):
+        total_duration = est_chf['event_times'].loc[214]
+
+        for k in range(N_GEN):
 
             xk = df_input.iloc[k].astype(np.float32)
             xk = torch.unsqueeze(torch.tensor(xk.values), dim=0)
             # x, y = x.to(device), y.to(device)
-            logits, fnns_out = model.forward(xk)
+            xk = xk.to(device)
+            logits, _ = model.forward(xk)
 
-            dx = sum((df_input.iloc[k] - df_input.iloc[-1]) ** 2) ** 0.5
-            weight_i = 1 - (dx / d_max) ** 0.5
-            # print("weight_i", weight_i)
+            dx = sum((df_input.iloc[k] - df_input.iloc[N_GEN]) ** 2) ** 0.5
+            weight_k = 1 - (dx / d_max) ** 0.5
+            # print("weight_k", weight_k)  # weight_k 0.6658194611105693
 
             for j in range(215):
                 if j == 0:
-                    duration_j = est_chf['event_times'].loc[j] / est_chf['event_times'].loc[214]
+                    duration_j = est_chf['event_times'].loc[j] / total_duration
                     phi = 0
                 else:
                     duration_j = (est_chf['event_times'].loc[j] - est_chf['event_times'].loc[j - 1]) \
-                                 / est_chf['event_times'].loc[214]
+                                 / total_duration
                     phi = math.log(est_chf['chf_rsf_{}'.format(k)].loc[j]) - math.log(est_chf['chf_nelson'].loc[j])
 
-                logits_j = logits * ((weight_i * duration_j) ** 0.5)
-                truths = phi * ((weight_i * duration_j) ** 0.5)
+                # print("duration_j", duration_j)  # duration_j 0.0008431703204047217
+                # print("phi", phi)  # phi 0.27634822347966037
+
+                logits_j = logits * ((weight_k * duration_j) ** 0.5)
+                truths = phi * ((weight_k * duration_j) ** 0.5)
                 truths = torch.as_tensor(truths)
 
                 loss = criterion(logits_j, truths)
@@ -373,13 +380,12 @@ if __name__ == "__main__":
     Xt = OneHotEncoder().fit_transform(X_no_grade)
     Xt.loc[:, "tgrade"] = grade_num
 
-    from sklearn.preprocessing import MinMaxScaler
     scaler = MinMaxScaler()
     Xt = pd.DataFrame(scaler.fit_transform(Xt), columns=Xt.columns)
 
     random_state = 20
     X_train, X_test, y_train, y_test = train_test_split(Xt, y, test_size=0.25, random_state=random_state)
-    print(X_train.head(3))
+    # print(X_train.head(3))
 
     # ============ Find Max Distances ========
     d_max = max_euclidean_distance(X_train)  # max euclidean distance among all samples after normalization
@@ -398,20 +404,20 @@ if __name__ == "__main__":
                                random_state=random_state)
     rsf.fit(X_train, y_train)
 
-    X_test_sorted = X_test.sort_values(by=["pnodes", "age"])
-    X_test_sel = pd.concat((X_test_sorted.head(3), X_test_sorted.tail(3)))
+    # X_test_sorted = X_test.sort_values(by=["pnodes", "age"])
+    # X_test_sel = pd.concat((X_test_sorted.head(3), X_test_sorted.tail(3)))
     # pd.Series(rsf.predict(X_test_sel))
 
-    surv = rsf.predict_cumulative_hazard_function(X_test_sel, return_array=True)
+    # surv = rsf.predict_cumulative_hazard_function(X_test_sel, return_array=True)
 
-    for i, s in enumerate(surv):
-        plt.step(rsf.event_times_, s, where="post", label=str(i))
+    # for i, s in enumerate(surv):
+    #     plt.step(rsf.event_times_, s, where="post", label=str(i))
 
-    plt.ylabel("Cumulative hazard")
-    plt.xlabel("Time in days")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+    # plt.ylabel("Cumulative hazard")
+    # plt.xlabel("Time in days")
+    # plt.legend()
+    # plt.grid(True)
+    # plt.show()
 
     # =========================== Nelson-Aalon Estimator ===============================================================
     from lifelines.fitters.nelson_aalen_fitter import NelsonAalenFitter
@@ -422,16 +428,16 @@ if __name__ == "__main__":
     x_nelson = nelson.cumulative_hazard_.index
     y_nelson = nelson.cumulative_hazard_.NA_estimate
 
-    plt.step(nelson.cumulative_hazard_.index,
-             nelson.cumulative_hazard_.NA_estimate,
-             where="post",
-             label=str(i))
+    # plt.step(nelson.cumulative_hazard_.index,
+    #          nelson.cumulative_hazard_.NA_estimate,
+    #          where="post",
+    #          label=str(i))
 
-    plt.ylabel("Cumulative hazard")
-    plt.xlabel("Time in days")
+    # plt.ylabel("Cumulative hazard")
+    # plt.xlabel("Time in days")
     # plt.legend()
-    plt.grid(True)
-    plt.show()
+    # plt.grid(True)
+    # plt.show()
 
     # =========================== Train Neural Additive Model ==========================================================
     test_scores = []
