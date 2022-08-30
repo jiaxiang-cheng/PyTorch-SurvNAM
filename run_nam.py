@@ -72,7 +72,7 @@ def seed_everything(seed):
     torch.backends.cudnn.benchmark = False
 
 
-def train_model(x_train, y_train, x_valid, y_valid, device, rsf, d_list, nelson_est):
+def train_model(x_train, y_train, x_valid, y_valid, device, rsf, max_distances, nelson_est):
     """
 
     :param x_train:
@@ -106,7 +106,7 @@ def train_model(x_train, y_train, x_valid, y_valid, device, rsf, d_list, nelson_
 
     for epoch in range(training_epochs):
         model = model.train()  # training the base
-        total_loss = train_one_epoch(model, criterion, optimizer, train_loader, device, rsf, d_list, nelson_est)
+        total_loss = train_one_epoch(model, criterion, optimizer, train_loader, device, rsf, max_distances, nelson_est)
         # record the log of training (training loss)
         logging.info(f"epoch {epoch} | train | {total_loss}")
 
@@ -134,7 +134,7 @@ def train_model(x_train, y_train, x_valid, y_valid, device, rsf, d_list, nelson_
     return model
 
 
-def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_list, nelson_est):
+def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, max_distances, nelson_est):
     """
 
     :param model:
@@ -149,18 +149,16 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, d_lis
     # the Arabic name taqaddum which means 'progress'.
     pbar = tqdm.tqdm(enumerate(data_loader, start=1), total=len(data_loader))
 
-    [_, d_max_age, d_max_estrec, d_max_pnodes, d_max_progrec, d_max_tsize] = d_list
-
     total_loss = 0
     for i, (x, y) in pbar:
         x_loss = 0  # print("x", x[0][0].item()) # print("x", x)
 
         # ============================== Generate Points Following Normal Distribution =================================
-        gen_age = generate_normal(x[0][0].item(), d_max_age * 0.1)
-        gen_estrec = generate_normal(x[0][1].item(), d_max_estrec * 0.1)
-        gen_pnodes = generate_normal(x[0][4].item(), d_max_pnodes * 0.1)
-        gen_progrec = generate_normal(x[0][5].item(), d_max_progrec * 0.1)
-        gen_tsize = generate_normal(x[0][6].item(), d_max_tsize * 0.1)
+        gen_age = generate_normal(x[0][0].item(), max_distances['age'] * 0.1)
+        gen_estrec = generate_normal(x[0][1].item(), max_distances['estrec'] * 0.1)
+        gen_pnodes = generate_normal(x[0][4].item(), max_distances['pnodes'] * 0.1)
+        gen_progrec = generate_normal(x[0][5].item(), max_distances['progrec'] * 0.1)
+        gen_tsize = generate_normal(x[0][6].item(), max_distances['tsize'] * 0.1)
 
         df_input = pd.concat([pd.DataFrame(gen_age), pd.DataFrame(gen_estrec)], axis=1)
         df_input['horTh=yes'] = x[0][2].item()
@@ -392,8 +390,8 @@ if __name__ == "__main__":
 
     numeric_list = ['age', 'estrec', 'pnodes', 'progrec', 'tsize']
     max_distances = max_variable_distances(X_train, numeric_list)
-    d_list = [d_max, max_distances['age'], max_distances['estrec'],
-              max_distances['pnodes'], max_distances['progrec'], max_distances['tsize']]
+    # d_list = [d_max, max_distances['age'], max_distances['estrec'],
+    #           max_distances['pnodes'], max_distances['progrec'], max_distances['tsize']]
     # print(d_list)  # [2.2164908688956717, 1.0, 0.9265734265734266, 1.0, 1.0, 1.0000000000000002]
 
     rsf = RandomSurvivalForest(n_estimators=1000,
@@ -444,7 +442,7 @@ if __name__ == "__main__":
     while True:
         try:
             (x_train, y_train), (x_validate, y_validate) = next(train)
-            model = train_model(x_train, y_train, x_validate, y_validate, device, rsf, d_list, y_nelson)
+            model = train_model(x_train, y_train, x_validate, y_validate, device, rsf, max_distances, y_nelson)
             # metric, score = evaluate(model, test_loader, device)
             # test_scores.append(score)
             # logging.info(f"fold {len(test_scores)}/{n_splits} | test | {metric}={test_scores[-1]}")
