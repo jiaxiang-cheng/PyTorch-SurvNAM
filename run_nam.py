@@ -149,6 +149,19 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, max_d
     # the Arabic name taqaddum which means 'progress'.
     pbar = tqdm.tqdm(enumerate(data_loader, start=1), total=len(data_loader))
 
+    # find all estimated CHF by nelson-aalon estimator corresponding to time points with events
+    list_nelson = []
+    for _, event_time in enumerate(rsf.event_times_):
+        # print(nelson_est.loc[72])  # 0.001988071570576899
+        list_nelson.append(nelson_est.loc[event_time])
+    # append the CHF by nelson-aalon estimator
+    est_chf = pd.concat([pd.DataFrame(rsf.event_times_), pd.DataFrame(list_nelson)], axis=1)
+
+    # formulate the column names
+    column_list = ['event_times', 'chf_nelson']
+    for num in range(100):
+        column_list.append('chf_rsf_{}'.format(num))
+
     total_loss = 0
     for i, (x, y) in pbar:
         x_loss = 0  # print("x", x[0][0].item()) # print("x", x)
@@ -202,49 +215,28 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, max_d
         #  0.00850506 0.00923685 0.01042667 0.01404961 0.02457283 0.02506429
         #  0.02506429 0.0356179  0.03565238 0.03629387 0.03876501 0.03909379 ...
 
-        # find all estimated CHF by nelson-aalon estimator corresponding to time points with events
-        list_nelson = []
-        for _, event_time in enumerate(rsf.event_times_):
-            # print(nelson_est.loc[72])  # 0.001988071570576899
-            list_nelson.append(nelson_est.loc[event_time])
-        # append the CHF by nelson-aalon estimator
-        est_chf = pd.concat([pd.DataFrame(rsf.event_times_), pd.DataFrame(list_nelson)], axis=1)
-
         # CHF estimated by RSF for generated points (N = 100)
         chf_rsf = rsf.predict_cumulative_hazard_function(df_input, return_array=True)
         # print(chf_rsf[0])  CHF of 0th instance by RSF
         # [0.00207913 0.00207913 0.00229458 0.00318554 0.00665146 0.00665146
         #  0.01027261 0.01223869 0.01479719 0.01945229 0.02890883 0.0289664
         #  0.03129134 0.03592671 0.037428   0.0419167  0.04567486 0.04567486 ...
+        # print("chf_rsf", pd.DataFrame(chf_rsf).T)
 
+        # chf = pd.DataFrame()
+        # chf = pd.concat([chf, est_chf], axis=1)
         # append all CHF by random survival forest for generated points
-        for _, chf_generated_point in enumerate(chf_rsf):
-            est_chf = pd.concat([est_chf, pd.DataFrame(chf_generated_point)], axis=1)
-            # plt.step(rsf.event_times_, s, where="post", label=str(i))
+        # for _, chf_generated_point in enumerate(chf_rsf):
+        #     chf = pd.concat([chf, pd.DataFrame(chf_generated_point)], axis=1)
+        # plt.step(rsf.event_times_, s, where="post", label=str(i))
 
-        # formulate the column names
-        column_list = ['event_times', 'chf_nelson']
-        for num in range(100):
-            column_list.append('chf_rsf_{}'.format(num))
-        est_chf.columns = column_list
+        chf = pd.concat([est_chf, pd.DataFrame(chf_rsf).T], axis=1)
+        chf.columns = column_list
+        # print(chf.head(3))
 
-        # print(est_chf)
-        #     event_times chf_rsf     chf_nelson
-        # 0   72.0        0.001709    0.001988
-        # 1   98.0        0.001709    0.003980
-        # 2   120.0       0.002140    0.005980
-        # 3   160.0       0.002745    0.007984
-        # 4   169.0       0.007239    0.009996
-
-        # surv = rsf.predict_cumulative_hazard_function(x, return_array=True)
-        # loss = 0
-
-        # df_temp = df_input.copy()
         df_input.loc[N_GEN] = x[0].tolist()  # append the explained point to the end
-        # print("df_temp", df_temp)
-        # print("pd.Series(x[0])", pd.Series(x[0]))
 
-        total_duration = est_chf['event_times'].loc[214]
+        total_duration = chf['event_times'].loc[214]
 
         for k in range(N_GEN):
 
@@ -254,38 +246,40 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, rsf, max_d
             xk = xk.to(device)
             logits, _ = model.forward(xk)
 
-            dx = sum((df_input.iloc[k] - df_input.iloc[N_GEN]) ** 2) ** 0.5
-            weight_k = 1 - (dx / d_max) ** 0.5
+            # dx = sum((df_input.iloc[k] - df_input.iloc[N_GEN]) ** 2) ** 0.5
+            weight_k = 1 - ((sum((df_input.iloc[k] - df_input.iloc[N_GEN]) ** 2) ** 0.5) / d_max) ** 0.5
             # print("weight_k", weight_k)  # weight_k 0.6658194611105693
 
             for j in range(215):
                 if j == 0:
-                    duration_j = est_chf['event_times'].loc[j] / total_duration
+                    duration_j = chf['event_times'].loc[j] / total_duration
                     phi = 0
                 else:
-                    duration_j = (est_chf['event_times'].loc[j] - est_chf['event_times'].loc[j - 1]) \
+                    duration_j = (chf['event_times'].loc[j] - chf['event_times'].loc[j - 1]) \
                                  / total_duration
-                    phi = math.log(est_chf['chf_rsf_{}'.format(k)].loc[j]) - math.log(est_chf['chf_nelson'].loc[j])
+                    phi = math.log(chf['chf_rsf_{}'.format(k)].loc[j]) - math.log(chf['chf_nelson'].loc[j])
 
                 # print("duration_j", duration_j)  # duration_j 0.0008431703204047217
                 # print("phi", phi)  # phi 0.27634822347966037
 
                 logits_j = logits * ((weight_k * duration_j) ** 0.5)
-                truths = phi * ((weight_k * duration_j) ** 0.5)
-                truths = torch.as_tensor(truths)
+                # truths = phi * ((weight_k * duration_j) ** 0.5)
+                truths = torch.as_tensor(phi * ((weight_k * duration_j) ** 0.5))
+                # print("logits_j", logits_j)
+                # print("truths", truths)
 
                 loss = criterion(logits_j, truths)
                 loss.backward(retain_graph=True)
                 x_loss += loss.item()
+
+            optimizer.step()
+            model.zero_grad()
 
         # print("x_loss:", x_loss)
         # loss = criterion(logits, est_chf)
 
         # total_loss -= (total_loss / i) - (loss.item() / i)
         total_loss += x_loss
-
-        optimizer.step()
-        model.zero_grad()
 
         pbar.set_description(f"train | loss = {total_loss:.5f}")
 
